@@ -15,8 +15,11 @@ def startup():
 
 # ---------------- CORS CONFIG ----------------
 origins = [
-    "http://localhost:3000",   # local frontend
-    "http://127.0.0.1:3000",  # local frontend alt
+   # "http://localhost:3000",   # local frontend
+    #"http://127.0.0.1:3000",  # local frontend alt
+    "http://localhost:5173",     # ✅ ADD THIS
+    "http://127.0.0.1:5173",    # ✅ ADD THIS
+
     "https://amazongo-store.vercel.app"   # 🔥 REPLACE with your actual Vercel URL
 ]
 
