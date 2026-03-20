@@ -1,7 +1,8 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 
-# ---------------- USER MODELS ----------------
+
+# -------- USER MODELS --------
 
 class UserCreate(BaseModel):
     name: Optional[str] = None
@@ -22,14 +23,14 @@ class EmailCheck(BaseModel):
     email: EmailStr
 
 
-# ---------------- RESET PASSWORD MODEL ----------------
+# -------- PASSWORD RESET --------
 
 class ResetPassword(BaseModel):
     email: EmailStr
     new_password: str
 
 
-# ---------------- PRODUCT MODEL ----------------
+# -------- PRODUCT MODEL --------
 
 class ProductOut(BaseModel):
     id: int
@@ -40,3 +41,9 @@ class ProductOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# -------- HISTORY MODEL --------
+
+class HistoryItem(BaseModel):
+    product_id: int

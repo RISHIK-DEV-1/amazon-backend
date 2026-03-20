@@ -1,11 +1,16 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from ..models import UserCreate, ResetPassword
 from ..database import get_connection
-from ..security import create_access_token, hash_password
+from ..security import create_access_token, hash_password, verify_token
 
-router = APIRouter(prefix="/auth", tags=["Auth"])
+router = APIRouter(tags=["Auth"])
 
+security = HTTPBearer()
+
+
+# ---------------- LOGIN / SIGNUP ----------------
 
 @router.post("")
 def auth_user(user: UserCreate):
@@ -20,6 +25,7 @@ def auth_user(user: UserCreate):
 
     db_user = cursor.fetchone()
 
+    # ---------- EXISTING USER ----------
     if db_user:
 
         if hash_password(user.password) != db_user["password"]:
@@ -32,6 +38,7 @@ def auth_user(user: UserCreate):
             "email": db_user["email"],
         }
 
+    # ---------- NEW USER ----------
     else:
 
         cursor.execute(
@@ -57,8 +64,13 @@ def auth_user(user: UserCreate):
         }
     )
 
-    return {"user": user_data, "token": token}
+    return {
+        "user": user_data,
+        "token": token
+    }
 
+
+# ---------------- RESET PASSWORD ----------------
 
 @router.post("/reset-password")
 def reset_password(data: ResetPassword):
@@ -82,3 +94,22 @@ def reset_password(data: ResetPassword):
     conn.close()
 
     return {"message": "Password updated successfully"}
+
+
+# ---------------- CURRENT USER ----------------
+
+@router.get("/me")
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+
+    token = credentials.credentials
+
+    payload = verify_token(token)
+
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    return {
+        "id": payload["user_id"],
+        "name": payload["name"],
+        "email": payload["email"]
+    }

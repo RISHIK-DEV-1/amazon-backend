@@ -6,8 +6,11 @@ from .database import init_db
 
 app = FastAPI(title="Amazon Clone Backend")
 
-# Initialize database when server starts
-init_db()
+
+@app.on_event("startup")
+def startup():
+    init_db()
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -17,9 +20,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Routers
-app.include_router(auth.router)
-app.include_router(products.router)
+app.include_router(auth.router, prefix="/auth")
+app.include_router(products.router, prefix="/products")
 app.include_router(search.router)
 
 

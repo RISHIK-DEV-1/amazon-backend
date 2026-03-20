@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from ..models import ProductOut
 from ..database import get_connection
 
-router = APIRouter(prefix="/products", tags=["Products"])
+router = APIRouter(tags=["Search"])
 
 
 @router.get("/search", response_model=list[ProductOut])
