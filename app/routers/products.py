@@ -1,6 +1,6 @@
-# products.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from ..database import get_connection
+from ..security import get_current_admin
 
 router = APIRouter(tags=["Products"])
 
@@ -11,14 +11,10 @@ def get_all_products():
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT id, title, price, category, image, description, features
-        FROM products
-    """)
-
+    cursor.execute("SELECT * FROM products")
     rows = cursor.fetchall()
-    conn.close()
 
+    conn.close()
     return [dict(row) for row in rows]
 
 
@@ -28,14 +24,10 @@ def get_products_by_category(category: str):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT id, title, price, category, image, description, features
-        FROM products WHERE category=?
-    """, (category,))
-
+    cursor.execute("SELECT * FROM products WHERE category=?", (category,))
     rows = cursor.fetchall()
-    conn.close()
 
+    conn.close()
     return [dict(row) for row in rows]
 
 
@@ -45,12 +37,9 @@ def get_product(product_id: int):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT id, title, price, category, image, description, features
-        FROM products WHERE id=?
-    """, (product_id,))
-
+    cursor.execute("SELECT * FROM products WHERE id=?", (product_id,))
     row = cursor.fetchone()
+
     conn.close()
 
     if not row:
@@ -65,13 +54,11 @@ def log_view(user_id: int, product_id: int):
     conn = get_connection()
     cursor = conn.cursor()
 
-    # ✅ Get username from users table
     cursor.execute("SELECT name FROM users WHERE id=?", (user_id,))
     user = cursor.fetchone()
 
     username = user["name"] if user else "Guest"
 
-    # ✅ Insert with username
     cursor.execute(
         "INSERT INTO user_history (user_id, username, product_id) VALUES (?, ?, ?)",
         (user_id, username, product_id)
@@ -109,3 +96,80 @@ def get_history(user_id: int):
     conn.close()
 
     return [dict(row) for row in rows]
+
+
+# ================= ADMIN SECTION =================
+
+# ---------------- ADD PRODUCT ----------------
+@router.post("/admin/products")
+def add_product(product: dict, admin=Depends(get_current_admin)):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # ❗ DO NOT INSERT ID (auto increment)
+    cursor.execute("""
+        INSERT INTO products (title, price, category, image, description, features)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (
+        product.get("title"),
+        product.get("price"),
+        product.get("category"),
+        product.get("image"),
+        product.get("description"),
+        product.get("features")
+    ))
+
+    conn.commit()
+    conn.close()
+
+    return {"message": "Product added successfully"}
+
+
+# ---------------- UPDATE PRODUCT ----------------
+@router.put("/admin/products/{product_id}")
+def update_product(product_id: int, product: dict, admin=Depends(get_current_admin)):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT id FROM products WHERE id=?", (product_id,))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    cursor.execute("""
+        UPDATE products
+        SET title=?, price=?, category=?, image=?, description=?, features=?
+        WHERE id=?
+    """, (
+        product.get("title"),
+        product.get("price"),
+        product.get("category"),
+        product.get("image"),
+        product.get("description"),
+        product.get("features"),
+        product_id
+    ))
+
+    conn.commit()
+    conn.close()
+
+    return {"message": "Product updated successfully"}
+
+
+# ---------------- DELETE PRODUCT ----------------
+@router.delete("/admin/products/{product_id}")
+def delete_product(product_id: int, admin=Depends(get_current_admin)):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT id FROM products WHERE id=?", (product_id,))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    cursor.execute("DELETE FROM products WHERE id=?", (product_id,))
+
+    conn.commit()
+    conn.close()
+
+    return {"message": "Product deleted successfully"}

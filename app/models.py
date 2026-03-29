@@ -1,7 +1,6 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 
-
 # -------- USER MODELS --------
 
 class UserCreate(BaseModel):
@@ -9,26 +8,23 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
 
-
 class UserOut(BaseModel):
     id: int
     name: str
     email: EmailStr
+    role: str   # NEW: includes role info
 
     class Config:
         from_attributes = True
 
-
 class EmailCheck(BaseModel):
     email: EmailStr
-
 
 # -------- PASSWORD RESET --------
 
 class ResetPassword(BaseModel):
     email: EmailStr
     new_password: str
-
 
 # -------- PRODUCT MODEL --------
 
@@ -41,7 +37,6 @@ class ProductOut(BaseModel):
 
     class Config:
         from_attributes = True
-
 
 # -------- HISTORY MODEL --------
 
