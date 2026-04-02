@@ -4,36 +4,74 @@ from ..security import get_current_user
 
 router = APIRouter(prefix="/invoice", tags=["Invoice"])
 
+
 @router.get("/{invoice_id}")
 def get_invoice(invoice_id: int, user=Depends(get_current_user)):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM invoices WHERE id=? AND user_id=?", (invoice_id, user["user_id"]))
+    # ============================
+    # GET INVOICE
+    # ============================
+    cursor.execute(
+        "SELECT * FROM invoices WHERE id=? AND user_id=?",
+        (invoice_id, user["user_id"])
+    )
     invoice = cursor.fetchone()
+
     if not invoice:
         conn.close()
         raise HTTPException(status_code=404, detail="Invoice not found")
 
     invoice_data = dict(invoice)
-    invoice_data["created_at"] = to_ist(invoice_data["created_at"])
+
+    # FORMAT DATE
+    invoice_data["created_at"] = to_ist(invoice_data.get("created_at"))
+
+    # FALLBACK USERNAME
     invoice_data["username"] = invoice_data.get("username") or user["name"]
 
-    cursor.execute("""
-        SELECT o.id AS order_id, o.product_id, o.quantity, p.title, p.price, p.image
-        FROM orders o
-        JOIN products p ON o.product_id = p.id
-        WHERE o.user_id=? AND o.id IN (SELECT order_id FROM invoices WHERE id=?)
-    """, (user["user_id"], invoice_id))
-    products = [dict(p) for p in cursor.fetchall()]
-
-    for p in products:
-        p["subtotal"] = p["quantity"] * p["price"]
-
-    invoice_data["products"] = products
+    # SAFE DEFAULTS
     invoice_data["address"] = invoice_data.get("address") or "N/A"
     invoice_data["pincode"] = invoice_data.get("pincode") or "N/A"
     invoice_data["payment_mode"] = invoice_data.get("payment_mode") or "N/A"
+    invoice_data["total_amount"] = invoice_data.get("total_amount") or 0
+
+    # ============================
+    # ✅ GET ALL PRODUCTS USING invoice_id
+    # ============================
+    cursor.execute("""
+        SELECT 
+            o.id AS order_id,
+            o.product_id,
+            o.quantity,
+            p.title,
+            p.price,
+            p.image
+        FROM orders o
+        JOIN products p ON o.product_id = p.id
+        WHERE o.invoice_id = ?
+    """, (invoice_id,))
+
+    rows = cursor.fetchall()
+
+    products = []
+
+    for row in rows:
+        item = dict(row)
+
+        # SAFE VALUES
+        price = item.get("price") or 0
+        qty = item.get("quantity") or 0
+
+        item["subtotal"] = price * qty
+
+        products.append(item)
+
+    # ============================
+    # FINAL RESPONSE
+    # ============================
+    invoice_data["products"] = products
 
     conn.close()
     return invoice_data

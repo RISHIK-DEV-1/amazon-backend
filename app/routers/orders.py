@@ -4,75 +4,10 @@ from ..security import get_current_user, get_current_admin
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
 
-# ----------------------------
-# PLACE SINGLE ORDER
-# ----------------------------
-@router.post("/{product_id}")
-def place_order(
-    product_id: int,
-    data: dict = Body(...),
-    user=Depends(get_current_user)
-):
-    amount = data.get("amount", 0)
-    quantity = data.get("quantity", 1)
-    payment_mode = data.get("payment_mode", "")
 
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    # ✅ FETCH SAVED ADDRESS
-    cursor.execute("SELECT address, pincode FROM addresses WHERE user_id=?", (user["user_id"],))
-    addr = cursor.fetchone()
-    if not addr:
-        conn.close()
-        raise HTTPException(status_code=400, detail="No saved address found")
-
-    address = addr["address"]
-    pincode = addr["pincode"]
-
-    # PRODUCT CHECK
-    cursor.execute("SELECT price FROM products WHERE id=?", (product_id,))
-    row = cursor.fetchone()
-    if not row:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Product not found")
-
-    product_price = row["price"]
-    expected_total = product_price * quantity
-
-    if amount != expected_total:
-        conn.close()
-        raise HTTPException(status_code=400, detail=f"Payment must match ₹{expected_total}")
-
-    # INSERT ORDER
-    cursor.execute(
-        "INSERT INTO orders (user_id, username, product_id, quantity, status) VALUES (?, ?, ?, ?, 'placed')",
-        (user["user_id"], user["name"], product_id, quantity)
-    )
-    order_id = cursor.lastrowid
-
-    # TIMELINE
-    cursor.execute(
-        "INSERT INTO order_status_history (order_id, status) VALUES (?, 'placed')",
-        (order_id,)
-    )
-
-    # INVOICE WITH SAVED ADDRESS
-    cursor.execute(
-        "INSERT INTO invoices (order_id, user_id, username, address, pincode, total_amount, payment_mode) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (order_id, user["user_id"], user["name"], address, pincode, amount, payment_mode)
-    )
-    invoice_id = cursor.lastrowid
-
-    conn.commit()
-    conn.close()
-
-    return {"message": "Order placed successfully", "invoice_id": invoice_id}
-
-
-# ----------------------------
+# ============================
 # PLACE BULK ORDER
-# ----------------------------
+# ============================
 @router.post("/bulk")
 def place_bulk_order(
     data: dict = Body(...),
@@ -87,9 +22,13 @@ def place_bulk_order(
     conn = get_connection()
     cursor = conn.cursor()
 
-    # ✅ FETCH SAVED ADDRESS
-    cursor.execute("SELECT address, pincode FROM addresses WHERE user_id=?", (user["user_id"],))
+    # ADDRESS
+    cursor.execute(
+        "SELECT address, pincode FROM addresses WHERE user_id=?",
+        (user["user_id"],)
+    )
     addr = cursor.fetchone()
+
     if not addr:
         conn.close()
         raise HTTPException(status_code=400, detail="No saved address found")
@@ -100,26 +39,28 @@ def place_bulk_order(
     total_amount = 0
     order_ids = []
 
+    # CREATE ORDERS
     for item in items:
-        product_id = item.get("product_id")
-        quantity = item.get("quantity", 1)
-        amount = item.get("amount", 0)
+        try:
+            product_id = int(item.get("product_id"))
+            quantity = int(item.get("quantity", 1))
+            amount = float(item.get("amount", 0))
+        except:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Invalid item data")
 
         cursor.execute("SELECT price FROM products WHERE id=?", (product_id,))
         row = cursor.fetchone()
+
         if not row:
             conn.close()
             raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
 
-        product_price = row["price"]
-        expected_total = product_price * quantity
+        expected_total = row["price"] * quantity
 
         if amount != expected_total:
             conn.close()
-            raise HTTPException(
-                status_code=400,
-                detail=f"Payment for product {product_id} must match ₹{expected_total}"
-            )
+            raise HTTPException(status_code=400, detail="Payment mismatch")
 
         cursor.execute(
             "INSERT INTO orders (user_id, username, product_id, quantity, status) VALUES (?, ?, ?, ?, 'placed')",
@@ -135,13 +76,24 @@ def place_bulk_order(
             (order_id,)
         )
 
-    # INVOICE
+    # CREATE SINGLE INVOICE
     cursor.execute(
-        "INSERT INTO invoices (order_id, user_id, username, address, pincode, total_amount, payment_mode) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (order_ids[0], user["user_id"], user["name"], address, pincode, total_amount, payment_mode)
+        """
+        INSERT INTO invoices
+        (user_id, username, address, pincode, total_amount, payment_mode)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (user["user_id"], user["name"], address, pincode, total_amount, payment_mode)
     )
 
     invoice_id = cursor.lastrowid
+
+    # LINK ALL ORDERS TO THIS INVOICE
+    for oid in order_ids:
+        cursor.execute(
+            "UPDATE orders SET invoice_id=? WHERE id=?",
+            (invoice_id, oid)
+        )
 
     conn.commit()
     conn.close()
@@ -149,9 +101,88 @@ def place_bulk_order(
     return {"message": "Bulk order placed successfully", "invoice_id": invoice_id}
 
 
-# ----------------------------
+# ============================
+# PLACE SINGLE ORDER
+# ============================
+@router.post("/{product_id}")
+def place_order(
+    product_id: int,
+    data: dict = Body(...),
+    user=Depends(get_current_user)
+):
+    amount = data.get("amount", 0)
+    quantity = data.get("quantity", 1)
+    payment_mode = data.get("payment_mode", "")
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # ADDRESS
+    cursor.execute(
+        "SELECT address, pincode FROM addresses WHERE user_id=?",
+        (user["user_id"],)
+    )
+    addr = cursor.fetchone()
+
+    if not addr:
+        conn.close()
+        raise HTTPException(status_code=400, detail="No saved address found")
+
+    address = addr["address"]
+    pincode = addr["pincode"]
+
+    cursor.execute("SELECT price FROM products WHERE id=?", (product_id,))
+    row = cursor.fetchone()
+
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    expected_total = row["price"] * quantity
+
+    if amount != expected_total:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Invalid amount")
+
+    cursor.execute(
+        "INSERT INTO orders (user_id, username, product_id, quantity, status) VALUES (?, ?, ?, ?, 'placed')",
+        (user["user_id"], user["name"], product_id, quantity)
+    )
+
+    order_id = cursor.lastrowid
+
+    cursor.execute(
+        "INSERT INTO order_status_history (order_id, status) VALUES (?, 'placed')",
+        (order_id,)
+    )
+
+    # CREATE INVOICE
+    cursor.execute(
+        """
+        INSERT INTO invoices
+        (user_id, username, address, pincode, total_amount, payment_mode)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (user["user_id"], user["name"], address, pincode, amount, payment_mode)
+    )
+
+    invoice_id = cursor.lastrowid
+
+    # LINK ORDER
+    cursor.execute(
+        "UPDATE orders SET invoice_id=? WHERE id=?",
+        (invoice_id, order_id)
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {"message": "Order placed successfully", "invoice_id": invoice_id}
+
+
+# ============================
 # GET MY ORDERS
-# ----------------------------
+# ============================
 @router.get("/my")
 def get_my_orders(user=Depends(get_current_user)):
     conn = get_connection()
@@ -161,10 +192,11 @@ def get_my_orders(user=Depends(get_current_user)):
         SELECT o.id, o.status, o.created_at,
                o.username, o.quantity,
                p.title, p.price, p.image,
-               i.id as invoice_id, i.address, i.pincode, i.payment_mode
+               o.invoice_id,
+               i.address, i.pincode, i.payment_mode
         FROM orders o
         JOIN products p ON o.product_id = p.id
-        LEFT JOIN invoices i ON o.id = i.order_id
+        LEFT JOIN invoices i ON o.invoice_id = i.id
         WHERE o.user_id=?
         ORDER BY o.created_at DESC
     """, (user["user_id"],))
@@ -195,9 +227,9 @@ def get_my_orders(user=Depends(get_current_user)):
     return result
 
 
-# ----------------------------
+# ============================
 # ADMIN ORDERS
-# ----------------------------
+# ============================
 @router.get("/admin")
 def get_all_orders(admin=Depends(get_current_admin)):
     conn = get_connection()
@@ -221,9 +253,9 @@ def get_all_orders(admin=Depends(get_current_admin)):
     return orders
 
 
-# ----------------------------
+# ============================
 # UPDATE STATUS
-# ----------------------------
+# ============================
 @router.put("/{order_id}")
 def update_order_status(order_id: int, status: str, admin=Depends(get_current_admin)):
     if status not in ["placed", "shipped", "delivered", "cancelled"]:
@@ -249,9 +281,9 @@ def update_order_status(order_id: int, status: str, admin=Depends(get_current_ad
     return {"message": "Order status updated"}
 
 
-# ----------------------------
+# ============================
 # CANCEL ORDER
-# ----------------------------
+# ============================
 @router.put("/cancel/{order_id}")
 def cancel_order(order_id: int, user=Depends(get_current_user)):
     conn = get_connection()
@@ -284,9 +316,9 @@ def cancel_order(order_id: int, user=Depends(get_current_user)):
     return {"message": "Order cancelled"}
 
 
-# ----------------------------
+# ============================
 # DELETE ORDER
-# ----------------------------
+# ============================
 @router.delete("/{order_id}")
 def delete_order(order_id: int, admin=Depends(get_current_admin)):
     conn = get_connection()
