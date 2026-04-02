@@ -18,16 +18,21 @@ def get_all_products():
     return [dict(row) for row in rows]
 
 
-# ---------------- GET PRODUCTS BY CATEGORY ----------------
+# ---------------- GET PRODUCTS BY CATEGORY (CASE-INSENSITIVE) ----------------
 @router.get("/category/{category}")
 def get_products_by_category(category: str):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM products WHERE category=?", (category,))
-    rows = cursor.fetchall()
+    # ✅ CASE-INSENSITIVE MATCH
+    cursor.execute(
+        "SELECT * FROM products WHERE LOWER(category) = LOWER(?)",
+        (category.strip(),)
+    )
 
+    rows = cursor.fetchall()
     conn.close()
+
     return [dict(row) for row in rows]
 
 
@@ -106,14 +111,16 @@ def add_product(product: dict, admin=Depends(get_current_admin)):
     conn = get_connection()
     cursor = conn.cursor()
 
-    # ❗ DO NOT INSERT ID (auto increment)
+    # ✅ NORMALIZE CATEGORY (important fix)
+    category = (product.get("category") or "").strip().lower()
+
     cursor.execute("""
         INSERT INTO products (title, price, category, image, description, features)
         VALUES (?, ?, ?, ?, ?, ?)
     """, (
         product.get("title"),
         product.get("price"),
-        product.get("category"),
+        category,  # ✅ normalized
         product.get("image"),
         product.get("description"),
         product.get("features")
@@ -136,6 +143,9 @@ def update_product(product_id: int, product: dict, admin=Depends(get_current_adm
         conn.close()
         raise HTTPException(status_code=404, detail="Product not found")
 
+    # ✅ NORMALIZE CATEGORY
+    category = (product.get("category") or "").strip().lower()
+
     cursor.execute("""
         UPDATE products
         SET title=?, price=?, category=?, image=?, description=?, features=?
@@ -143,7 +153,7 @@ def update_product(product_id: int, product: dict, admin=Depends(get_current_adm
     """, (
         product.get("title"),
         product.get("price"),
-        product.get("category"),
+        category,  # ✅ normalized
         product.get("image"),
         product.get("description"),
         product.get("features"),
