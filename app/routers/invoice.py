@@ -72,6 +72,11 @@ def get_invoice(invoice_id: int, user=Depends(get_current_user)):
     # FINAL RESPONSE
     # ============================
     invoice_data["products"] = products
+    # ✅ FIX: HANDLE ORDER IDS
+    if invoice_data.get("order_id"):
+        invoice_data["order_ids"] = [invoice_data["order_id"]]
+    else:
+        invoice_data["order_ids"] = [p["order_id"] for p in products]
 
     conn.close()
     return invoice_data

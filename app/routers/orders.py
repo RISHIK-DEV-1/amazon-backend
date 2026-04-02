@@ -160,10 +160,10 @@ def place_order(
     cursor.execute(
         """
         INSERT INTO invoices
-        (user_id, username, address, pincode, total_amount, payment_mode)
-        VALUES (?, ?, ?, ?, ?, ?)
+        (order_id, user_id, username, address, pincode, total_amount, payment_mode)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (user["user_id"], user["name"], address, pincode, amount, payment_mode)
+        (order_id, user["user_id"], user["name"], address, pincode, amount, payment_mode)
     )
 
     invoice_id = cursor.lastrowid
