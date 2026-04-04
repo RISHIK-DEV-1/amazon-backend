@@ -4,7 +4,6 @@ from ..security import get_current_user, get_current_admin
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
 
-
 # ============================
 # PLACE BULK ORDER
 # ============================
@@ -243,6 +242,7 @@ def get_all_orders(admin=Depends(get_current_admin)):
             GROUP_CONCAT(p.image) as images
         FROM orders o
         JOIN products p ON o.product_id = p.id
+        WHERE o.invoice_id IS NOT NULL
         GROUP BY o.invoice_id
         ORDER BY created_at DESC
     """)
@@ -253,7 +253,6 @@ def get_all_orders(admin=Depends(get_current_admin)):
     for r in rows:
         data = dict(r)
         data["created_at"] = to_ist(data["created_at"])
-        # show first product for preview
         data["title"] = (data["titles"] or "").split(",")[0]
         data["image"] = (data["images"] or "").split(",")[0]
         result.append(data)
@@ -323,28 +322,39 @@ def cancel_order(order_id: int, user=Depends(get_current_user)):
         conn.close()
         raise HTTPException(status_code=400, detail="Cannot cancel delivered order")
 
-    # CANCEL ALL ORDERS IN SAME INVOICE
+    # CANCEL ALL ORDERS IN SAME INVOICE IF LINKED
     invoice_id = order["invoice_id"]
-    cursor.execute(
-        "UPDATE orders SET status='cancelled' WHERE invoice_id=?",
-        (invoice_id,)
-    )
+    if invoice_id:
+        cursor.execute(
+            "UPDATE orders SET status='cancelled' WHERE invoice_id=?",
+            (invoice_id,)
+        )
 
-    cursor.execute(
-        "SELECT id FROM orders WHERE invoice_id=?",
-        (invoice_id,)
-    )
-    order_ids = cursor.fetchall()
+        cursor.execute(
+            "SELECT id FROM orders WHERE invoice_id=?",
+            (invoice_id,)
+        )
+        order_ids = cursor.fetchall()
 
-    for o in order_ids:
+        for o in order_ids:
+            cursor.execute(
+                "INSERT INTO order_status_history (order_id, status) VALUES (?, 'cancelled')",
+                (o["id"],)
+            )
+    else:
+        # Just cancel single order if no invoice
+        cursor.execute(
+            "UPDATE orders SET status='cancelled' WHERE id=?",
+            (order_id,)
+        )
         cursor.execute(
             "INSERT INTO order_status_history (order_id, status) VALUES (?, 'cancelled')",
-            (o["id"],)
+            (order_id,)
         )
 
     conn.commit()
     conn.close()
-    return {"message": "Order cancelled for all items"}
+    return {"message": "Order cancelled successfully"}
 
 
 # ============================

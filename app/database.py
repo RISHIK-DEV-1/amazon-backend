@@ -71,6 +71,7 @@ def init_db():
         product_id INTEGER,
         quantity INTEGER DEFAULT 1,
         status TEXT DEFAULT 'placed',
+        invoice_id INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
@@ -100,7 +101,6 @@ def init_db():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS invoices (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        order_id INTEGER UNIQUE,
         user_id INTEGER,
         username TEXT,
         address TEXT,
@@ -111,7 +111,14 @@ def init_db():
     )
     """)
 
-    # ================= INSERT PRODUCTS =================
+    # ================= ADD MISSING COLUMNS =================
+    # Check if 'invoice_id' exists in orders
+    cursor.execute("PRAGMA table_info(orders)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if "invoice_id" not in columns:
+        cursor.execute("ALTER TABLE orders ADD COLUMN invoice_id INTEGER")
+
+    # ================= INSERT DEFAULT PRODUCTS =================
     cursor.execute("SELECT COUNT(*) FROM products")
     count = cursor.fetchone()[0]
 
@@ -145,3 +152,8 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+
+if __name__ == "__main__":
+    init_db()
+    print("Database initialized successfully")
