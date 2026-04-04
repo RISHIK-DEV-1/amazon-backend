@@ -41,20 +41,16 @@ def place_bulk_order(
 
     # CREATE ORDERS
     for item in items:
-        try:
-            product_id = int(item.get("product_id"))
-            quantity = int(item.get("quantity", 1))
-            amount = float(item.get("amount", 0))
-        except:
-            conn.close()
-            raise HTTPException(status_code=400, detail="Invalid item data")
+        product_id = int(item.get("product_id"))
+        quantity = int(item.get("quantity", 1))
+        amount = float(item.get("amount", 0))
 
         cursor.execute("SELECT price FROM products WHERE id=?", (product_id,))
         row = cursor.fetchone()
 
         if not row:
             conn.close()
-            raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
+            raise HTTPException(status_code=404, detail="Product not found")
 
         expected_total = row["price"] * quantity
 
@@ -76,7 +72,7 @@ def place_bulk_order(
             (order_id,)
         )
 
-    # CREATE SINGLE INVOICE
+    # CREATE SINGLE INVOICE (MASTER ORDER)
     cursor.execute(
         """
         INSERT INTO invoices
@@ -88,7 +84,7 @@ def place_bulk_order(
 
     invoice_id = cursor.lastrowid
 
-    # LINK ALL ORDERS TO THIS INVOICE
+    # LINK ALL ORDERS TO SAME INVOICE
     for oid in order_ids:
         cursor.execute(
             "UPDATE orders SET invoice_id=? WHERE id=?",
@@ -144,6 +140,7 @@ def place_order(
         conn.close()
         raise HTTPException(status_code=400, detail="Invalid amount")
 
+    # CREATE ORDER
     cursor.execute(
         "INSERT INTO orders (user_id, username, product_id, quantity, status) VALUES (?, ?, ?, ?, 'placed')",
         (user["user_id"], user["name"], product_id, quantity)
@@ -160,10 +157,10 @@ def place_order(
     cursor.execute(
         """
         INSERT INTO invoices
-        (order_id, user_id, username, address, pincode, total_amount, payment_mode)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        (user_id, username, address, pincode, total_amount, payment_mode)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (order_id, user["user_id"], user["name"], address, pincode, amount, payment_mode)
+        (user["user_id"], user["name"], address, pincode, amount, payment_mode)
     )
 
     invoice_id = cursor.lastrowid
@@ -189,10 +186,9 @@ def get_my_orders(user=Depends(get_current_user)):
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT o.id, o.status, o.created_at,
+        SELECT o.id, o.invoice_id, o.status, o.created_at,
                o.username, o.quantity,
                p.title, p.price, p.image,
-               o.invoice_id,
                i.address, i.pincode, i.payment_mode
         FROM orders o
         JOIN products p ON o.product_id = p.id
@@ -228,7 +224,7 @@ def get_my_orders(user=Depends(get_current_user)):
 
 
 # ============================
-# ADMIN ORDERS
+# ADMIN ORDERS (GROUPED BY INVOICE)
 # ============================
 @router.get("/admin")
 def get_all_orders(admin=Depends(get_current_admin)):
@@ -236,53 +232,77 @@ def get_all_orders(admin=Depends(get_current_admin)):
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT o.id, o.status, o.created_at,
-               o.username, o.user_id, o.quantity,
-               p.title, p.price, p.image
+        SELECT 
+            o.invoice_id,
+            MAX(o.status) as status,
+            MAX(o.created_at) as created_at,
+            o.username,
+            COUNT(o.id) as total_items,
+            SUM(o.quantity) as total_qty,
+            GROUP_CONCAT(p.title) as titles,
+            GROUP_CONCAT(p.image) as images
         FROM orders o
         JOIN products p ON o.product_id = p.id
-        ORDER BY o.created_at DESC
+        GROUP BY o.invoice_id
+        ORDER BY created_at DESC
     """)
 
-    orders = [
-        dict(o) | {"created_at": to_ist(o["created_at"])}
-        for o in cursor.fetchall()
-    ]
+    rows = cursor.fetchall()
+    result = []
+
+    for r in rows:
+        data = dict(r)
+        data["created_at"] = to_ist(data["created_at"])
+        # show first product for preview
+        data["title"] = (data["titles"] or "").split(",")[0]
+        data["image"] = (data["images"] or "").split(",")[0]
+        result.append(data)
 
     conn.close()
-    return orders
+    return result
 
 
 # ============================
-# UPDATE STATUS
+# UPDATE STATUS (ALL PRODUCTS IN INVOICE)
 # ============================
-@router.put("/{order_id}")
-def update_order_status(order_id: int, status: str, admin=Depends(get_current_admin)):
+@router.put("/{invoice_id}")
+def update_order_status(invoice_id: int, status: str, admin=Depends(get_current_admin)):
     if status not in ["placed", "shipped", "delivered", "cancelled"]:
         raise HTTPException(status_code=400, detail="Invalid status")
 
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("UPDATE orders SET status=? WHERE id=?", (status, order_id))
+    # UPDATE ALL ORDERS IN THIS INVOICE
+    cursor.execute(
+        "UPDATE orders SET status=? WHERE invoice_id=?",
+        (status, invoice_id)
+    )
 
     if cursor.rowcount == 0:
         conn.close()
         raise HTTPException(status_code=404, detail="Order not found")
 
+    # ADD HISTORY FOR ALL ORDERS
     cursor.execute(
-        "INSERT INTO order_status_history (order_id, status) VALUES (?, ?)",
-        (order_id, status)
+        "SELECT id FROM orders WHERE invoice_id=?",
+        (invoice_id,)
     )
+    order_ids = cursor.fetchall()
+
+    for o in order_ids:
+        cursor.execute(
+            "INSERT INTO order_status_history (order_id, status) VALUES (?, ?)",
+            (o["id"], status)
+        )
 
     conn.commit()
     conn.close()
-
-    return {"message": "Order status updated"}
+    return {"message": f"Order status updated to {status} for all items"}
 
 
 # ============================
-# CANCEL ORDER
+# CANCEL ORDER (USER)
 # ============================
 @router.put("/cancel/{order_id}")
 def cancel_order(order_id: int, user=Depends(get_current_user)):
@@ -293,7 +313,6 @@ def cancel_order(order_id: int, user=Depends(get_current_user)):
         "SELECT * FROM orders WHERE id=? AND user_id=?",
         (order_id, user["user_id"])
     )
-
     order = cursor.fetchone()
 
     if not order:
@@ -304,34 +323,51 @@ def cancel_order(order_id: int, user=Depends(get_current_user)):
         conn.close()
         raise HTTPException(status_code=400, detail="Cannot cancel delivered order")
 
-    cursor.execute("UPDATE orders SET status='cancelled' WHERE id=?", (order_id,))
+    # CANCEL ALL ORDERS IN SAME INVOICE
+    invoice_id = order["invoice_id"]
     cursor.execute(
-        "INSERT INTO order_status_history (order_id, status) VALUES (?, 'cancelled')",
-        (order_id,)
+        "UPDATE orders SET status='cancelled' WHERE invoice_id=?",
+        (invoice_id,)
     )
+
+    cursor.execute(
+        "SELECT id FROM orders WHERE invoice_id=?",
+        (invoice_id,)
+    )
+    order_ids = cursor.fetchall()
+
+    for o in order_ids:
+        cursor.execute(
+            "INSERT INTO order_status_history (order_id, status) VALUES (?, 'cancelled')",
+            (o["id"],)
+        )
 
     conn.commit()
     conn.close()
-
-    return {"message": "Order cancelled"}
+    return {"message": "Order cancelled for all items"}
 
 
 # ============================
-# DELETE ORDER
+# DELETE ORDER (ADMIN)
 # ============================
-@router.delete("/{order_id}")
-def delete_order(order_id: int, admin=Depends(get_current_admin)):
+@router.delete("/{invoice_id}")
+def delete_order(invoice_id: int, admin=Depends(get_current_admin)):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("DELETE FROM order_status_history WHERE order_id=?", (order_id,))
-    cursor.execute("DELETE FROM orders WHERE id=?", (order_id,))
+    # DELETE HISTORY FIRST
+    cursor.execute("SELECT id FROM orders WHERE invoice_id=?", (invoice_id,))
+    order_ids = cursor.fetchall()
 
-    if cursor.rowcount == 0:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Order not found")
+    for o in order_ids:
+        cursor.execute("DELETE FROM order_status_history WHERE order_id=?", (o["id"],))
+
+    # DELETE ORDERS
+    cursor.execute("DELETE FROM orders WHERE invoice_id=?", (invoice_id,))
+
+    # DELETE INVOICE
+    cursor.execute("DELETE FROM invoices WHERE id=?", (invoice_id,))
 
     conn.commit()
     conn.close()
-
-    return {"message": "Order deleted"}
+    return {"message": "Order deleted for all items"}
