@@ -23,7 +23,8 @@ def startup():
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://amazongo-store.vercel.app"
+    "https://amazongo-store.vercel.app",
+    "https://www.amazongo-store.vercel.app"
 ]
 
 app.add_middleware(
