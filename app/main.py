@@ -20,17 +20,16 @@ def startup():
 
 
 # ---------------- CORS CONFIG ----------------
-#origins = [
-#    "http://localhost:5173",
-#    "http://127.0.0.1:5173",
-#    "https://amazongo-store.vercel.app",
-#    "https://www.amazongo-store.vercel.app"
-#]
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://amazongo-store.vercel.app",
+    "https://www.amazongo-store.vercel.app"
+]
 
 app.add_middleware(
     CORSMiddleware,
-#    allow_origins=origins,
-    allow_origins = ["*"],  # test only
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
