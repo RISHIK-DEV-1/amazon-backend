@@ -381,9 +381,7 @@ def delete_order(invoice_id: int, admin=Depends(get_current_admin)):
     conn.commit()
     conn.close()
     return {"message": "Order deleted for all items"}
-# ============================
-# CHECK IF PRODUCT ORDERED
-# ============================
+#CHECK IF PRODUCT ORDERED WITH STATUS
 @router.get("/check/{product_id}")
 def check_order(product_id: int, user=Depends(get_current_user)):
     conn = get_connection()
@@ -391,15 +389,24 @@ def check_order(product_id: int, user=Depends(get_current_user)):
 
     cursor.execute(
         """
-        SELECT id FROM orders 
-        WHERE user_id=? AND product_id=? AND status != 'cancelled'
+        SELECT status FROM orders 
+        WHERE user_id=? AND product_id=? 
+        ORDER BY created_at DESC
         LIMIT 1
         """,
         (user["user_id"], product_id)
     )
 
-    exists = cursor.fetchone()
-
+    row = cursor.fetchone()
     conn.close()
 
-    return {"ordered": bool(exists)}
+    if not row:
+        return {"ordered": False}
+
+    status = row["status"]
+
+    # ✅ allow re-buy if delivered or cancelled
+    if status in ["delivered", "cancelled"]:
+        return {"ordered": False}
+
+    return {"ordered": True}
