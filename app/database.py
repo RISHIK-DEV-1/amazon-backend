@@ -139,10 +139,10 @@ def init_db():
             (13,"Whirlpool Washing Machine",31990,"recommended","https://rukminim2.flixcart.com/image/720/720/xif0q/washing-machine-new/t/h/t/-original-imahk3tzbpaxtc62.jpeg?q=90","Automatic","9kg"),
             (14,"Dell Laptop",55999,"recommended","https://m.media-amazon.com/images/I/61Dw5Z8LzJL._SL1500_.jpg","Powerful laptop","SSD"),
             (15,"Sony Bravia TV",59999,"recommended","https://m.media-amazon.com/images/I/81wxS8abrgL._SL1500_.jpg","Smart TV","4K"),
-            (16,"CSK Jersey",450,"recommended","https://www.chennaisuperkings.com/shop/_next/image?url=https://store.chennaisuperkings.com/media/catalog/product/1/2/129.png&w=750&q=75","Cricket jersey","Comfort Fit"),
-            (17,"Panasonic Mixer",4999,"recommended","https://jamesandco.in/wp-content/uploads/2024/09/panasonic-mx-ac460.jpg","Kitchen mixer","Durable"),
+            (16,"CSK Jersey",450,"recommended","https://www.nextprint.in/cdn/shop/files/51wY94bfDRL._SX569.jpg","Cricket jersey","Comfort Fit"),
+            (17,"Panasonic Mixer",4999,"recommended","https://assets.nikshanonline.com/wp-content/uploads/2022/11/onam-saleonam-2023onam-mixi-offersonam-mixi-saleonam-discountonam-offers-at-nikshan.png","Kitchen mixer","Durable"),
             (18,"Arduino Uno",500,"recommended","https://cdn.sparkfun.com/assets/9/1/e/4/8/515b4656ce395f8a38000000.png","Microcontroller","Beginner Friendly"),
-            (19,"Havells Cooler",19999,"recommended","https://havells.com/media/catalog/product/cache/sample.jpg","Air cooler","Low Noise"),
+            (19,"Havells Cooler",19999,"recommended","https://havells.com/media/catalog/product/cache/844a913d283fe95e56e39582c5f2767b/g/h/ghracdwe3451_3_.jpg","Air cooler","Low Noise"),
             (20,"India Jersey",499,"recommended","https://www.nextprint.in/cdn/shop/files/51wY94bfDRL._SX569.jpg","Team jersey","Breathable")
         ]
         cursor.executemany(

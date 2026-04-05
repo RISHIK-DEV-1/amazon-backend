@@ -381,3 +381,25 @@ def delete_order(invoice_id: int, admin=Depends(get_current_admin)):
     conn.commit()
     conn.close()
     return {"message": "Order deleted for all items"}
+# ============================
+# CHECK IF PRODUCT ORDERED
+# ============================
+@router.get("/check/{product_id}")
+def check_order(product_id: int, user=Depends(get_current_user)):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT id FROM orders 
+        WHERE user_id=? AND product_id=? AND status != 'cancelled'
+        LIMIT 1
+        """,
+        (user["user_id"], product_id)
+    )
+
+    exists = cursor.fetchone()
+
+    conn.close()
+
+    return {"ordered": bool(exists)}
